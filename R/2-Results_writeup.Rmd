@@ -1,0 +1,495 @@
+---
+title: "Modelling the effects of target list length and repetition priming in event-based prospective memory"
+author: "ljgs"
+date: "07/10/2019"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+by Luke Strickland
+
+
+```{r load_packages_and_data, echo= FALSE , results = "hide", message=FALSE, warning=FALSE}
+#Load requirements
+require("knitr")
+library(dplyr)
+library(ggplot2)
+library(lme4)
+library(car)
+library(lsmeans)
+library(pander)
+library(tidyr)
+library(stringr)
+library(gridExtra)
+source("R/functions.R")
+theme_set(theme_simple())
+
+#Load data
+load("img/finaldats.RData")
+colnames(finaldats)[colnames(finaldats)=="D"] <- "Day"
+colnames(finaldats)[colnames(finaldats)=="cond"] <- "Condition"
+colnames(finaldats)[colnames(finaldats)=="S"] <- "Stimulus"
+colnames(finaldats)[colnames(finaldats)=="quarter"] <- "Trial_Range"
+
+finaldats$Stimulus <- factor(finaldats$Stimulus, levels=c("n", "w", "p"),
+                      labels=c("Non-word", "Word", "PM"))
+
+finaldats$Day <- factor(finaldats$Day, levels=c("1", "2"),
+                      labels=c("One", "Two"))
+
+finaldats$Condition <- factor(finaldats$Condition , levels=c("S", "M"),
+                      labels=c("Single", "Multiple"))
+
+finaldats$Trial_Range <- factor(finaldats$Trial_Range, levels=
+                           c("(0,162]", "(162,322]", "(322,484]", "(484,644]"),
+                          labels = 
+                            c("(2,162]", "(162,322]", "(324,484]", "(484,644]"))
+
+
+#Make a 'Correct' column to analyse accuracy
+finaldats$C <- substr(finaldats$Stimulus,1,1)==finaldats$R
+
+#Process meanaccs/ mean RTs for each participant
+
+participant_accs <-
+  finaldats %>% group_by(s, Stimulus, Condition, Trial_Range, Day) %>% 
+  summarise(meanacc = mean(C)) %>%  group_by(s)
+
+participant_RTs <-
+  finaldats %>% group_by(s, Stimulus, Condition, Trial_Range, Day) %>% 
+  filter(C) %>% summarise(meancorRT = mean(RT))
+
+##Data from end of block recognition memory test
+data_files <- list.files("data")
+test_RM_files <-  data_files[grepl("test_RM", data_files)]
+RMdats <- stack_dats(test_RM_files)
+
+
+RMdats <-
+  RMdats %>% group_by(s, C, cond, day) %>% mutate(stimtrialcounter=1:length(RT))
+
+
+RMdats[!RMdats$R %in% c("y", "n"),]
+RMdats <- RMdats[RMdats$R %in% c("y", "n"),]
+
+
+colnames(RMdats) <- c("Stimulus", "R", "RT", "block", "Condition",
+                      "Day", "prestim_R", "stim", "s", "stimtrialcounter")
+
+RMdats$Day <- factor(RMdats$Day, levels=c("1", "2"),
+                     labels=c("One", "Two"))
+
+RMdats$Condition <- factor(RMdats$Condition , levels=c("single", "multi"),
+                      labels=c("Single", "Multiple"))
+
+RMdats$Stimulus <- factor(RMdats$Stimulus, levels=c("y", "n"),
+                      labels=c("Old", "New"))
+
+RMdats$R <- factor(RMdats$R, levels=c("y", "n"),
+                      labels=c("Old", "New"))
+
+
+RMdats$C <- RMdats$Stimulus==RMdats$R
+
+RM_accs <-
+  RMdats %>% group_by(s, Stimulus, Condition, Day) %>% 
+  summarise(meanacc = mean(C)) %>%  group_by(s)
+
+
+RMdats_RTs <-
+  RMdats %>% group_by(s, Stimulus, Condition, Day) %>% 
+  filter(C) %>% summarise(meancorRT = mean(RT))
+
+
+```
+
+```{r ldt_accuracy_descriptives_fortext, echo= FALSE, message=FALSE, warning=FALSE}
+#Descriptives for text chunks
+# day <- participant_accs %>%  filter(Stimulus!="PM") %>% 
+#   group_by(Day) %>% summarise(mean(meanacc))
+# day_se <- se2(participant_accs %>% filter(Stimulus!="PM"), 
+#               facs="Day", dvnam="meanacc")
+
+stim <- 
+  participant_accs %>% group_by(Stimulus) %>% summarise(mean(meanacc))
+stim_se <- 
+  se2(participant_accs, facs="Stimulus", dvnam="meanacc")
+
+```
+
+#### Lexical Decision Task
+##### Accuracy
+Ongoing task accuracies are displayed in the left two panels of Figure 3. By far the most substantial effect on ongoing task accuracy was that of stimulus type. Accuracy was lower to words, (*M* = `r sprintf("%.2f",stim[stim$Stimulus=="Word",2])`, *SE* = `r round(stim_se["Word"],  2)`) than to
+non-words (*M* = `r round(stim[stim$Stimulus=="Non-word",2],2)`,
+*SE* = `r round(stim_se["Non-word"],  2)`). There was an effect of trial range, but post-hoc comparisons of the trial ranges indicated only one difference reached significance (see supplementary materials). We did not find an effect PM condition on ongoing task accuracy. This has been a common finding in previous PM studies, where costs tend to manifest in RT rather than accuracy (see Anderson, Strube & McDaniel, 2019).
+
+```{r echo= FALSE}
+acc_cap <- "*Figure 3.* Ongoing task and PM accuracies. Each panel corresponds to one stimulus type. The error bars included
+were calculated using the Morey (2008) bias-corrected method for within-subjects error bars."
+```
+
+
+```{r response_accuracy_graph, echo= FALSE, message=FALSE, warning=FALSE,fig.height = 4, fig.width = 13,fig.cap=acc_cap}
+
+S_cond_accs <-
+  participant_accs %>% group_by(Stimulus, Condition, Trial_Range, Day) %>% summarise(mean_meanacc = mean(meanacc))
+
+S_cond_accs_se <- arr2df(se2(participant_accs, facs=c('Stimulus', 'Condition', "Trial_Range", "Day"), 
+                             dvnam="meanacc"))
+colnames(S_cond_accs_se)[colnames(S_cond_accs_se)=="y"] <- "se_meanacc"
+
+plot.df <- full_join(S_cond_accs, S_cond_accs_se)
+names(plot.df)[names(plot.df) %in% c("mean_meanacc", "se_meanacc")] <-
+  c("M", "SE")
+
+ggplot(plot.df %>% filter(Stimulus!="PM"), aes(factor(Trial_Range), M)) +
+  geom_point(stat = "identity",
+             aes(shape = Day, colour = Condition),
+             size = 3) + geom_errorbar(aes(
+               ymax = M + SE,
+               ymin = M - SE,
+               colour = Condition
+             )) + facet_grid(.~ Stimulus) + xlab("Trial Range") +
+              ylab("Accuracy") + ylim(0.75, 1) + 
+              theme(text = element_text(size=16))
+
+```
+
+##### Response Time
+
+```{r ldt_RT_descriptives_fortext, echo= FALSE, message=TRUE, warning=TRUE, results='hide'}
+
+TR_RT  <- 
+        participant_RTs %>% group_by(Trial_Range) %>% summarise(mean(meancorRT))
+
+TR_RT_se <- arr2df(se2(participant_RTs, facs= c('Trial_Range'), dvnam="meancorRT"))
+
+day_RT  <- 
+        participant_RTs %>% group_by(Day) %>% summarise(mean(meancorRT))
+
+day_RT_se <- arr2df(se2(participant_RTs, facs= c('Day'), dvnam="meancorRT"))
+
+
+stim_cond_RT <- 
+        participant_RTs %>% group_by(Stimulus, Condition) %>% summarise(mean(meancorRT))
+
+stim_cond_RT_se <- arr2df(se2(participant_RTs, facs= c('Stimulus', 'Condition'), dvnam="meancorRT"))
+
+```
+
+Ongoing task RTs are displayed in the left two panels of Figure 4. Stimulus type, condition, session, and trial range all had significant effects on mean correct ongoing task RTs. RTs were slower in session one 
+(*M* =`r round(day_RT[day_RT$Day=="One",2],2)`s, *SE* =
+`r round(day_RT_se [day_RT_se$y=="One",2],2)`s)
+than in session two
+(*M* =`r round(day_RT[day_RT$Day=="Two",2],2)`s, *SE* =
+`r round(day_RT_se [day_RT_se$y=="Two",2],2)`s, and got slightly faster for later trial ranges (see supplementary materials). Stimulus type interacted with condition. RTs were longer in the multiple-target condition for both word trials (single *M* = `r round(stim_cond_RT[stim_cond_RT$Stimulus=="Word" & stim_cond_RT$Condition=="Single",3],2)`s, *SE* =
+`r round(stim_cond_RT_se[stim_cond_RT_se$Stimulus=="Word" & stim_cond_RT_se$Condition=="Single",3],2)`s; multiple *M* = 
+`r round(stim_cond_RT[stim_cond_RT$Stimulus=="Word" & stim_cond_RT$Condition=="Multiple",3],2)`s, *SE* = 
+`r round(stim_cond_RT_se[stim_cond_RT_se$Stimulus=="Word" & stim_cond_RT_se$Condition=="Multiple",3],2)`s) and non-word trials (single *M* = `r round(stim_cond_RT[stim_cond_RT$Stimulus=="Non-word" & stim_cond_RT$Condition=="Single",3],2)`s, *SE* =
+`r round(stim_cond_RT_se[stim_cond_RT_se$Stimulus=="Non-word" & stim_cond_RT_se$Condition=="Single",3],2)`s; multiple *M* = 
+`r round(stim_cond_RT[stim_cond_RT$Stimulus=="Non-word" & stim_cond_RT$Condition=="Multiple",3],2)`s,  *SE* = 
+`r round(stim_cond_RT_se[stim_cond_RT_se$Stimulus=="Non-word" & stim_cond_RT_se$Condition=="Multiple",3],2)`s). This suggests a larger PM cost 
+to ongoing task performance for the more difficult multiple target PM task than for the simpler single-target task. The differences in RTs
+across the PM conditions were larger for word trials than non-word trials, possibly because PM targets were exclusively words. 
+
+```{r echo= FALSE}
+RT_cap <- "*Figure 4.* Ongoing task and PM task response times. Each panel corresponds to one stimulus type. The error bars included
+were calculated using the Morey (2008) bias-corrected method for within-subjects error bars."
+```
+
+
+```{r RT graphs, echo= FALSE, message=FALSE, warning=TRUE, fig.height = 4, fig.width = 13,fig.cap=RT_cap}
+S_cond_RTs <-
+  participant_RTs%>% group_by(Stimulus, Condition, Trial_Range, Day) %>% summarise(mean_meancorRT = mean(meancorRT))
+
+S_cond_RTs_se <- arr2df(se2(participant_RTs, facs=c('Stimulus', 'Condition', 
+                                                    "Trial_Range", "Day"), 
+                             dvnam="meancorRT"))
+colnames(S_cond_RTs_se)[colnames(S_cond_RTs_se)=="y"] <- "se_meancorRT"
+
+
+plot.df <- full_join(S_cond_RTs, S_cond_RTs_se)
+names(plot.df)[names(plot.df) %in% c("mean_meancorRT", "se_meancorRT")] <-
+  c("M", "SE")
+
+ggplot(plot.df %>% filter(Stimulus!="PM"), aes(factor(Trial_Range), M)) +
+  geom_point(stat = "identity",
+             aes(shape = Day, colour = Condition),
+             size = 3) + geom_errorbar(aes(
+               ymax = M + SE,
+               ymin = M - SE,
+               colour = Condition
+             )) + facet_grid(. ~ Stimulus) + xlab("Trial Range") +
+               ylab("Response Time") + 
+              theme(text = element_text(size=16))
+
+```
+
+
+```{r PM_accuracy_descriptives, echo= FALSE, message=TRUE, warning=TRUE, results='asis'}
+PM_only <- finaldats[finaldats$Stimulus=='PM',]
+
+# day_PM <- 
+#         participant_accs %>% filter (Stimulus=="PM") %>% 
+#   group_by(Day) %>% summarise(mean(meanacc))
+# 
+# day_PM_se <- se2(participant_accs %>% filter (Stimulus=="PM"), 
+#                                facs= c('Day'), 
+#                                dvnam="meanacc")
+
+cond_trialrange_PM <- 
+        participant_accs %>% filter (Stimulus=="PM") %>% 
+  group_by(Condition, Trial_Range) %>% summarise(mean(meanacc))
+
+cond_trialrange_PM_se <- se2(participant_accs %>% filter (Stimulus=="PM"), 
+                               facs= c("Condition",
+                                       "Trial_Range"), 
+                               dvnam="meanacc")
+
+```
+
+
+
+```{r PMFAs, echo=FALSE, results='asis'}
+# PM_Rs <-
+#   finaldats %>% group_by(Stimulus, Condition) %>% filter(Stimulus!="PM") %>%
+#   summarise(meanP = mean(R=="P") *100)
+# 
+# pandoc.table(PM_Rs)
+
+FAs <-
+  finaldats %>% group_by() %>% filter(Stimulus!="PM") %>%
+  summarise(meanP = mean(R=="P") *100)
+```
+
+
+#### Prospective Memory Task
+
+<!-- Before proceeding with the PM analysis, -->
+<!-- we checked that learning effects could be adequately captured by our 'trial range' factor. The trial range factor -->
+<!-- may not have been adequate if, for example, there was rapid learning within trial ranges but none between. -->
+<!-- As presented in Figure 5, there was generally a lack of PM learning effects in the single-target, ceiling condition, and PM learning PM learning proceeded at a steady rate throughout the multiple-target condition. This suggests that the  -->
+<!-- 'trial range' factor is adequate to capture effects of PM learning.  -->
+
+
+```{r echo= FALSE}
+learning_cap <- "*Figure 5.* Accuracies and response times to PM targets over the course of 
+each block. The error bars included
+were calculated using the Morey (2008) bias-corrected method for within-subjects error bars."
+```
+
+```{r PM trial finegrained stuff, echo= FALSE, message=FALSE, eval=FALSE, warning=FALSE, results='hide', fig.cap = learning_cap, fig.height = 4, fig.width = 13}
+# PM_only$firstPM <- "NO"
+# PM_only$firstPM[PM_only$Condition=="Multiple" &
+#                     PM_only$stimtrialcounter==1] <- "YES"
+# PM_only$firstPM[PM_only$Condition=="Single" &
+#                     PM_only$stimtrialcounter==1] <- "YES"
+# 
+# PM_only %>% filter(firstPM=="YES") %>% group_by(Condition) %>% 
+#   summarise(acc=mean(C))
+# 
+# firstPM_glmer_top <-
+#   glmer(C ~ Condition * Day + (1 |s),
+#         data = PM_only %>% filter(firstPM=="YES"),
+#         family = binomial(link = "probit"))
+# 
+# Anova(firstPM_glmer_top, type="II")
+# 
+# PM_only %>% filter(firstPM=="YES") %>% group_by(Condition) %>%  summarise(acc=mean(C))
+
+PM_only$firstPM2 <- "NO"
+PM_only$firstPM2[PM_only$Condition=="Multiple" &
+                    PM_only$Scounter==1] <- "YES"
+PM_only$firstPM2[PM_only$Condition=="Single" &
+                    PM_only$Scounter==1] <- "YES"
+
+paccs_firsttrial <- PM_only %>% filter(firstPM2=="YES") %>% 
+  group_by(s, Condition) %>% summarise(acc=mean(C))
+
+firstPM2<- paccs_firsttrial %>% group_by(Condition) %>% summarise(acc=mean(acc))
+
+#NOTE NEED TO TEST IF THIS SE IS OK
+firstPM2_ses <- arr2df(se2(paccs_firsttrial, facs=c('Condition'), 
+                             dvnam="acc"))
+
+firstPM2_glm_top <-
+  glm(C ~ Condition * Day,
+        data = PM_only %>% filter(firstPM2=="YES"),
+        family = binomial(link = "probit"))
+
+Anova(firstPM2_glm_top)
+
+PM_only_RTs <-PM_only %>% group_by(s, Condition, Day) %>% filter(C & firstPM2=="YES") %>% 
+  summarise(meancorRT = mean(RT))
+
+firstPM2_RTs <- PM_only_RTs %>% group_by(Condition) %>% 
+  summarise(RT=mean(meancorRT))
+
+firstPM2RT_lm_top <-
+  lm(meancorRT ~ Condition * Day,
+        data = PM_only_RTs)
+Anova(firstPM2RT_lm_top)
+
+# 
+# One question of interest is whether performance in the single-target PM condition
+# is initially better than the multiple-target PM condition, or whether the advantage of 
+# single-target PM can be attributed to the larger number of PM stimulus repetitions
+# presented in the single-target block. To address this, we analysed single
+# and multiple-target PM performance using only the first PM trial of each block. 
+# We found that performance was substantially lower for the first PM trial 
+# in the multiple-target condition than in the single target condition
+
+#Plot first 8 PMs versus rest
+
+# First8_accs <- PM_only %>% filter(Scounter<9) %>% group_by(Condition, Scounter) %>% summarise(meanacc=mean(C))
+# 
+# ggplot(First8_accs, aes(factor(Scounter), meanacc)) +
+#   geom_point(stat = "identity",
+#              aes(colour = Condition),
+#              size = 3) + xlab("First PM Trials") +
+#               geom_line(aes(y= meanacc, group=Condition, col=Condition)) +
+#               ylab("Accuracy") + ylim(0.5, 1) + 
+#               theme(text = element_text(size=16))
+# 
+# First8_RTs <- PM_only %>% filter(Scounter<9) %>% group_by(Condition, Scounter) %>% summarise(meanRT=mean(RT))
+# 
+# ggplot(First8_RTs, aes(factor(Scounter), meanRT)) +
+#   geom_point(stat = "identity",
+#              aes(colour = Condition),
+#              size = 3) + xlab("First PM Trials") +
+#               geom_line(aes(y= meanRT, group=Condition, col=Condition)) +
+#               ylab("Accuracy") + ylim(0.5, 1) + 
+#               theme(text = element_text(size=16))
+
+
+
+ALL_accs <- PM_only %>% group_by(Condition, Scounter) %>% summarise(y=mean(C)) %>% mutate(stat="Accuracy")
+
+ALL_RTs <- PM_only  %>% group_by(Condition, Scounter) %>% summarise(y=mean(RT))%>% mutate(stat="Response Time")
+
+test <- rbind(ALL_accs, ALL_RTs)
+
+
+ggplot(test, aes(factor(Scounter), y)) +
+  geom_point(stat = "identity",
+             aes(colour = Condition),
+             size = 3) + xlab("PM Trial Number in Block (1-64)") +
+              geom_line(aes(y= y, group=Condition, col=Condition)) +
+              ylim(0.5, 1) + ylab("")+
+              theme(text = element_text(size=16))+theme(axis.text.x=element_blank())+
+              facet_grid(.~stat)
+
+
+
+```
+
+
+##### Accuracy
+
+PM responses on non-PM trials were very rare (`r round(FAs,2)`% of trials), 
+and thus are not analysed further.
+As PM stimuli were always words, there was no stimulus type variable in our 
+analyses of PM trial performance. There was a main effect of condition, and condition interacted with trial range. Although PM accuracy was
+lower in the multiple-target condition than the single-target condition, this difference decreased
+for trial ranges later in the blocks (see Table 1 and supplementary materials). The single-target
+condition began at near ceiling accuracy, consistent with an overlearned target. In contrast, 
+PM accuracy increased over the course of the block in the multiple-target PM condition, consistent
+with a target learning effect. However, accuracy in the single-target condition was significantly
+higher than the multiple-target condition even for the last trial range in each block, suggesting
+that target learning may not have reached ceiling by the end of the multiple-target blocks.
+
+Table 1: *PM accuracies. Displaying M(SE), with SEs calculated by the Morey (2008) bias-corrected method.*
+```{r PM_accuracy_table, echo= FALSE, message=FALSE, warning=TRUE, results='asis'}
+tmp <- full_join(
+  cond_trialrange_PM, arr2df(cond_trialrange_PM_se))
+
+tmp[,3] <- round(tmp[,3], 2)
+tmp[,4] <- round(tmp[,4], 2)
+
+MSEs<- paste(do.call(paste, c(tmp[,c(3, 4)], sep=" (")),
+      ")", sep="")
+
+PMacc_table <- cbind(as.data.frame(tmp[,1:2]), MSEs)
+
+pandoc.table(
+  PMacc_table %>% pivot_wider(names_from = c(Condition),
+                            values_from = MSEs)
+)
+
+```
+
+
+##### Response Time
+```{r PM_RT_descriptives, echo= FALSE, message=FALSE, warning=TRUE, results='asis'}
+day_PMRT <- 
+        participant_RTs %>% filter (Stimulus=="PM") %>% 
+  group_by(Day) %>% summarise(mean(meancorRT))
+
+day_PMRT_se <- se2(participant_RTs %>% filter (Stimulus=="PM"), 
+                               facs= c('Day'), 
+                               dvnam="meancorRT")
+
+cond_trialrange_PMRT <- 
+        participant_RTs %>% filter (Stimulus=="PM") %>% 
+  group_by(Condition, Trial_Range) %>% summarise(mean(meancorRT))
+
+cond_trialrange_PMRT_se <- se2(participant_RTs %>% filter (Stimulus=="PM"), 
+                               facs= c("Condition",
+                                       "Trial_Range"), 
+                               dvnam="meancorRT")
+
+
+```
+
+There was a main effect of condition, 
+and the effect of condition interacted with trial range. Generally, PM RTs 
+were longer in multiple-target than single-target conditions, but these differences decreased
+for later trial ranges (see Table 2 and supplementary materials). Analogous to the PM accuracy results,
+we found that the single-target condition was relatively stable across trial ranges, whereas
+RT decreased in the multiple-target condition. This is consistent with a ceiling effect for the 
+single-target condition, and target learning improving performance in the multiple-target condition. There was also a main effect of session, with PM RTs
+longer on session one (*M* = `r round(day_PMRT[day_PMRT$Day=="One",2],2)`s,
+*SE* =  `r round(day_PMRT_se["One"],2)`s), than on session two (*M* = `r round(day_PMRT[day_PMRT$Day=="Two",2],2)`s,
+*SE* =  `r round(day_PMRT_se["Two"],2)`s). 
+
+
+Table 2: *Correct PM Response Times. Displaying M(SE), with SEs calculated by the Morey (2008) bias-corrected method.*
+```{r PM_RT_table, echo= FALSE, message=FALSE, warning=TRUE, results='asis'}
+tmp <- full_join(
+  cond_trialrange_PMRT, arr2df(cond_trialrange_PMRT_se))
+
+tmp[,3] <- round(tmp[,3], 2)
+tmp[,4] <- round(tmp[,4], 2)
+
+MSEs<- paste(do.call(paste, c(tmp[,c(3, 4)], sep="s (")),
+       "s)", sep="")
+
+PMRT_table <- cbind(as.data.frame(tmp[,1:2]), MSEs)
+
+pandoc.table(
+  PMRT_table %>% pivot_wider(names_from = c(Condition),
+                            values_from = MSEs)
+)
+
+```
+
+
+
+
+
+``` {r test within-run variability effect on PM, echo= FALSE, message=FALSE, warning=FALSE, results='hide'}
+# 
+# participant_accs_within <-
+#   finaldats %>% group_by(s, Stimulus, Condition, withincounter, Day) %>% 
+#   filter(Trial_Range=='(0,162]') %>% 
+#   summarise(meanacc = mean(C)) %>% 
+#   group_by(s) %>% mutate(M = length(meanacc))
+# 
+# 
+# participant_accs_within %>% filter(Stimulus=="PM") %>% 
+#   group_by(withincounter, Condition) %>% summarise(meanacc=mean(meanacc))
+# 
+
+```
+

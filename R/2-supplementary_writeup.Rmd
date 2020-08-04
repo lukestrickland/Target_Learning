@@ -1,0 +1,585 @@
+---
+title: "Modelling the effects of target list length and repetition priming in event-based prospective memory, supplementary material"
+author: "ljgs"
+date: "07/10/2019"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+by Luke Strickland
+
+
+```{r load_packages_and_data, echo= FALSE , results = "hide", message=FALSE, warning=FALSE}
+#Load requirements
+require("knitr")
+library(dplyr)
+library(ggplot2)
+library(lme4)
+library(car)
+library(lsmeans)
+library(pander)
+library(tidyr)
+library(stringr)
+source("R/functions.R")
+theme_set(theme_simple())
+
+panderOptions('digits', 3)
+#panderOptions('round', 3)
+panderOptions('keep.trailing.zeros', TRUE)
+
+#Load data
+load("img/finaldats.RData")
+colnames(finaldats)[colnames(finaldats)=="D"] <- "Day"
+colnames(finaldats)[colnames(finaldats)=="cond"] <- "Condition"
+colnames(finaldats)[colnames(finaldats)=="S"] <- "Stimulus"
+colnames(finaldats)[colnames(finaldats)=="quarter"] <- "Trial_Range"
+
+finaldats$Stimulus <- factor(finaldats$Stimulus, levels=c("n", "w", "p"),
+                      labels=c("Non-word", "Word", "PM"))
+
+finaldats$Day <- factor(finaldats$Day, levels=c("1", "2"),
+                      labels=c("One", "Two"))
+
+finaldats$Condition <- factor(finaldats$Condition , levels=c("S", "M"),
+                      labels=c("Single", "Multiple"))
+
+finaldats$Trial_Range <- factor(finaldats$Trial_Range, levels=
+                           c("(0,162]", "(162,322]", "(322,484]", "(484,644]"),
+                          labels = 
+                            c("(2,162]", "(162,322]", "(324,484]", "(484,644]"))
+
+
+#Make a 'Correct' column to analyse accuracy
+finaldats$C <- substr(finaldats$Stimulus,1,1)==finaldats$R
+
+#Process meanaccs/ mean RTs for each participant
+
+participant_accs <-
+  finaldats %>% group_by(s, Stimulus, Condition, Trial_Range, Day) %>% 
+  summarise(meanacc = mean(C)) %>%  group_by(s)
+
+participant_RTs <-
+  finaldats %>% group_by(s, Stimulus, Condition, Trial_Range, Day) %>% 
+  filter(C) %>% summarise(meancorRT = mean(RT))
+
+
+data_files <- list.files("data")
+test_RM_files <-  data_files[grepl("test_RM", data_files)]
+RMdats <- stack_dats(test_RM_files)
+
+
+
+# 
+# # 
+# p22_old_RM <- paste("excluded_data/old_22/",
+#                        list.files("excluded_data/old_22"), sep="")
+# 
+# p22_old_RM <- p22_old_RM[grepl("test_RM", p22_old_RM)]
+# 
+# p22_old_RM_dat <- rbind(
+#   read.csv(p22_old_RM[1], stringsAsFactors = FALSE),
+#   read.csv(p22_old_RM[2], stringsAsFactors = FALSE),
+#   read.csv(p22_old_RM[3], stringsAsFactors = FALSE),
+#   read.csv(p22_old_RM[4], stringsAsFactors = FALSE)
+# )
+# 
+# p22_old_RM_dat$s <- "p22_old"
+# # 
+# # 
+# RMdats <- rbind(RMdats, p22_old_RM_dat)
+
+RMdats <-
+  RMdats %>% group_by(s, C, cond, day) %>% mutate(stimtrialcounter=1:length(RT))
+
+
+RMdats[!RMdats$R %in% c("y", "n"),]
+RMdats <- RMdats[RMdats$R %in% c("y", "n"),]
+
+
+colnames(RMdats) <- c("Stimulus", "R", "RT", "block", "Condition",
+                      "Day", "prestim_R", "stim", "s", "stimtrialcounter")
+
+RMdats$Day <- factor(RMdats$Day, levels=c("1", "2"),
+                     labels=c("One", "Two"))
+
+RMdats$Condition <- factor(RMdats$Condition , levels=c("single", "multi"),
+                      labels=c("Single", "Multiple"))
+
+RMdats$Stimulus <- factor(RMdats$Stimulus, levels=c("y", "n"),
+                      labels=c("Old", "New"))
+
+RMdats$R <- factor(RMdats$R, levels=c("y", "n"),
+                      labels=c("Old", "New"))
+
+
+RMdats$C <- RMdats$Stimulus==RMdats$R
+
+RM_accs <-
+  RMdats %>% group_by(s, Stimulus, Condition, Day) %>% 
+  summarise(meanacc = mean(C)) %>%  group_by(s)
+
+
+RMdats_RTs <-
+  RMdats %>% group_by(s, Stimulus, Condition, Day) %>% 
+  filter(C) %>% summarise(meancorRT = mean(RT))
+
+
+
+
+
+```
+
+# Prospective Memory Task
+
+Table S1
+
+*Wald Chi-Square significance tests for PM accuracy. A generalized linear
+mixed-effects model was fitted to every PM trial, with a binomial probit link 
+function. Random intercepts were included for each
+participant. In addition to examining experimental condition (single-target versus multiple-target), 
+we included two factors to account for
+to account for task repetition. One was trial range, to capture within-block
+learning effects. The other was whether it was the first or second day that the
+participant came in to perform the experiment, referred to as "Day".*
+
+```{r PM_accuracy_model, echo= FALSE, message=TRUE, warning=TRUE, results='asis'}
+
+
+#Look at PM accuracies
+PM_only <- finaldats[finaldats$Stimulus=='PM',]
+# 
+# PM_glmer_top <-
+#   glmer(C ~ Condition * Day * Trial_Range + (1 |s),
+#         data = PM_only,
+#         family = binomial(link = "probit"))
+# 
+# 
+# #
+# ss <- getME(PM_glmer_top,c("theta","fixef"))
+# PM_glmer_top2 <- update(PM_glmer_top,
+#                              start = ss,
+#                              control = glmerControl(optCtrl = list(maxfun = 2e4)))
+# 
+# ss2 <- getME(PM_glmer_top2,c("theta","fixef"))
+# PM_glmer_top3 <- update(PM_glmer_top2,
+#                              start = ss2,
+#                              control = glmerControl(optCtrl = list(maxfun = 2e4)))
+# #
+# save(PM_glmer_top3 , file = "img/PMacc_model.RData")
+
+load("img/PMacc_model.RData")
+
+pandoc.table(make_model_table(Anova(PM_glmer_top3,type="II")))
+
+```
+
+
+Table S2
+
+*Follow up significance tests of the difference in PM accuracy between experimental conditions
+for each trial range. The z.ratio is the mean of the effect divided by its standard error.
+Tukey adjustments were applied to the included p-values.*
+
+```{r PM_accuracy_condquart, echo= FALSE, message=FALSE, warning=FALSE, results='asis'}
+condquart <- lsmeans(PM_glmer_top3, ~Condition|Trial_Range)
+
+conditions_by_trialrange <- round_ps(
+  summary(contrast(condquart, method="pairwise"))%>%
+               select(-c(df, estimate, SE))
+)
+
+pandoc.table(conditions_by_trialrange)
+
+```
+
+Table S3
+
+*Follow up significance tests of the size of the 
+effects of condition on PM accuracy, compared across trial ranges. 
+The z.ratio is the mean of the effect divided by its standard error.
+Tukey adjustments were applied to the included p-values.*
+
+```{r PM_accuracy_condquart_2, echo= FALSE, message=FALSE, warning=FALSE, results='asis'} 
+
+condition_effects_across_trialranges<-   summary(
+    contrast(lsmeans(PM_glmer_top3, ~Condition*Trial_Range), 
+         interaction=TRUE, method="pairwise")
+  ) %>% select(-c(df, estimate, SE))
+
+
+
+pandoc.table(
+  round_ps(
+    condition_effects_across_trialranges
+  )
+)
+```
+
+Table S4
+
+*Follow up significance tests of the difference between PM accuracy for each trial range
+for the two different experimental conditions. 
+The z.ratio is the mean of the effect divided by its standard error.
+Tukey adjustments were applied to the included p-values.*
+
+```{r PM_accuracy_condquart_3, echo= FALSE, message=FALSE, warning=FALSE, results='asis'}
+quartcond <- lsmeans(PM_glmer_top3, ~Trial_Range|Condition)
+pandoc.table(round_ps(
+  summary(contrast(regrid(quartcond) , method="pairwise")) %>%
+               select(contrast, Condition, z.ratio, p.value)
+  )
+)
+```
+
+Table S5
+
+*Wald Chi-Square significance tests for PM RT. A linear
+mixed-effects model was fitted to mean correct PM RTs. Random intercepts were included for each
+participant. In addition to examining experimental condition (single-target versus multiple-target), 
+we included two factors to account for
+to account for task repetition. One was trial range, to capture within-block
+learning effects. The other was whether it was the first or second day that the
+participant came in to perform the experiment, referred to as "Day".*
+
+```{r PM_RT_model, echo= FALSE, message=TRUE, warning=TRUE, results='asis'}
+PMRT_lmer_top <-
+  lmer(meancorRT ~ Condition * Day * Trial_Range + (1 |s),
+        data = participant_RTs %>% filter(Stimulus=="PM"))
+
+pandoc.table(
+  make_model_table(Anova(PMRT_lmer_top,type="II"))
+)
+
+```
+
+Table S6
+
+*Follow up significance tests of the difference in PM RT between experimental conditions
+for each trial range. Tukey adjustments were applied to the included p-values.*
+
+```{r PM_RT_condquart, echo= FALSE, message=FALSE, warning=FALSE, results='asis'}
+condquart <- lsmeans(PMRT_lmer_top, ~Condition|Trial_Range)
+
+condition_effects_across_trialranges_RT <- round_ps(
+  summary(
+    contrast(condquart, method="pairwise")) 
+)
+
+
+pandoc.table(
+  condition_effects_across_trialranges_RT
+  )
+
+```
+
+Table S7
+
+*Follow up significance tests of the size of the 
+effects of condition on PM RT, compared across trial ranges. 
+Tukey adjustments were applied to the included p-values.*
+
+```{r PM_RT_condquart2, echo= FALSE, message=FALSE, warning=FALSE, results='asis'}
+pandoc.table(
+  round_ps(
+  summary(
+    
+    contrast(lsmeans(PMRT_lmer_top, ~Condition*Trial_Range), 
+         interaction=TRUE, method="pairwise")
+  ) %>% select(-c(df, estimate, SE))
+)
+)
+
+```
+
+Table S8
+
+*Follow up significance tests of the difference between PM RT for each trial range
+for the two different experimental conditions. 
+Tukey adjustments were applied to the included p-values.*
+
+
+```{r PM_RT_condquart3, echo= FALSE, message=FALSE, warning=FALSE, results='asis'}
+quartcond <- lsmeans(PMRT_lmer_top, ~Trial_Range|Condition)
+pandoc.table(
+  round_ps(
+  summary(
+    contrast(quartcond, method="pairwise"))%>% select(-c(df, estimate, SE)))
+)
+```
+
+# Ongoing Lexical Decision Task
+
+Table S9
+
+*Wald Chi-Square significance tests for ongoing task accuracy. A generalized linear
+mixed-effects model was fitted to every PM trial, with a binomial probit link 
+function. Random intercepts were included for each
+participant. In addition to examining experimental condition (single-target versus multiple-target) and stimulus type (word/non-word), 
+we included two factors to account for
+to account for task repetition. One was trial range, to capture within-block
+learning effects. The other was whether it was the first or second day that the
+participant came in to perform the experiment, referred to as "Day".*
+
+
+```{r ldt_accuracy_model, echo= FALSE, message=TRUE, warning=TRUE, results="asis"}
+#Accuracy (C) fixed effects S,cond,D, random effect participant level  
+# ldt_acc_glmer_top <-
+#   glmer(C ~ Stimulus * Condition * Day * Trial_Range + (1 |s),
+#         data = finaldats %>% filter(Stimulus!="PM" & R !="P"),
+#         family = binomial(link = "probit"))
+# 
+# 
+# ss <- getME(ldt_acc_glmer_top,c("theta","fixef"))
+# ldt_acc_glmer_top2 <- update(ldt_acc_glmer_top,
+#                              start = ss,
+#                              control = glmerControl(optCtrl = list(maxfun = 2e4)))
+# 
+# 
+# ss2 <- getME(ldt_acc_glmer_top2,c("theta","fixef"))
+# ldt_acc_glmer_top3 <- update(ldt_acc_glmer_top2,
+#                              start = ss2,
+#                              control = glmerControl(optCtrl = list(maxfun = 2e5)))
+# 
+# save(ldt_acc_glmer_top3, file = "img/ldacc_model.RData")
+
+load("img/ldacc_model.RData")
+
+pandoc.table(
+  make_model_table(Anova(ldt_acc_glmer_top3,type="II")))
+
+```
+
+Table S10
+
+*Follow up significance tests of the difference in ongoing task across trial ranges. 
+The z.ratio is the mean of the effect divided by its standard error.
+Tukey adjustments were applied to the included p-values.*
+
+```{r ldt_accuracy_trial_range, echo= FALSE, message=FALSE, warning=FALSE, results="asis",fig.height = 3, fig.width = 4}
+#Contrast tables for supplementary materials
+pandoc.table(
+  round_ps(
+    summary(
+    contrast(lsmeans(ldt_acc_glmer_top3, ~Trial_Range), 
+             method="pairwise")) %>% select(-c(df, estimate, SE))
+  )
+    
+)
+
+
+
+```
+
+
+Table S11
+
+*Wald Chi-Square significance tests for ongoing task RT. A linear
+mixed-effects model was fitted to mean correct PM RTs. Random intercepts were included for each
+participant. In addition to examining experimental condition (single-target versus multiple-target) and stimulus type (word/non-word), 
+we included two factors to account for
+to account for task repetition. One was trial range, to capture within-block
+learning effects. The other was whether it was the first or second day that the
+participant came in to perform the experiment, referred to as "Day".*
+
+```{r ldt_RT_model, echo= FALSE, message=TRUE, warning=TRUE, results="asis"}
+#Accuracy (C) fixed effects S,cond,D, random effect participant level
+
+
+RT_lmer_top <-
+  lmer(meancorRT ~ Stimulus * Condition * Day * Trial_Range + (1 |s),
+        data = participant_RTs %>% filter(Stimulus!="PM"))
+
+pandoc.table(
+  make_model_table(Anova(RT_lmer_top,type="II")))
+
+```
+Table S12
+
+*Follow up significance tests on the effect of trial range to ongoing task RT.
+Tukey adjustments were applied to the included p-values.*
+
+```{r ldt_RT_TrialRange, echo= FALSE, message=FALSE, warning=FALSE, results="asis"}
+pandoc.table(
+  round_ps(
+    summary(
+      contrast(lsmeans(RT_lmer_top, ~Trial_Range), 
+               method="pairwise"))%>% select(-c(df, estimate, SE))
+    )
+)
+
+
+```
+Table S13
+
+*Follow up significance tests of the difference in ongoing task RT
+across experimental conditions for each stimulus type.
+Tukey adjustments were applied to the included p-values.*
+
+```{r ldt_RT_stimcond, echo= FALSE, message=FALSE, warning=FALSE, results="asis"}
+pandoc.table(
+  round_ps(summary(
+    contrast(lsmeans(RT_lmer_top, ~Condition|Stimulus), 
+             method="pairwise"))%>% select(-c(df, estimate, SE))))
+
+```
+
+# Post-Block Recognition Memory Task
+
+```{r rec mem descriptives, echo= FALSE, message=TRUE, warning=TRUE, results='asis'}
+RMstim_CondRTs <-
+  RMdats_RTs %>% group_by(Condition) %>% summarise(mean_meancorRT = mean(meancorRT))
+
+RMstim_Condses <- se2(RMdats_RTs, facs=c('Condition'), dvnam="meancorRT")
+
+```
+```{r echo= FALSE}
+RM_cap <- "*Figure S1.* Accuracies and response times to the recognition memory
+test at the end of each block. Old stimuli refer to the PM targets that were just presented
+in the block, whereas
+new stimuli refer to the non-PM targets. The error bars included
+were calculated using the Morey (2008) bias-corrected method for within-subjects error bars."
+```
+
+
+```{r rec mem perf, echo= FALSE, message=FALSE, warning=TRUE, results='asis'}
+
+
+RM_accs_s <- RM_accs %>% group_by(s) %>%  summarise(meanacc = mean(meanacc))
+RM_accs_mean <- RM_accs_s %>% summarise(mean_meanacc=mean(meanacc))
+RM_accs_se <-   RM_accs_s %>% summarise(se_meanacc=sd(meanacc)/sqrt(length(meanacc)))
+
+```
+
+
+Recognition memory performance is plotted below in Figure S1. Our mixed model analyses of recognition memory performance included three factors:
+stimulus type (studied PM item/ new item), condition (single target PM/ multiple target PM),
+and session of the experiment (day 1/day 2). Recognition memory accuracy was near ceiling in all conditions (*M* = `r RM_accs_mean`, *SE* =
+`r RM_accs_se`), and 
+no differences across factors in our mixed model reached significance. For RT, the only effect that reached significance was that of condition. RTs to the recognition memory task were slower in the multiple-target condition (*M* = `r RMstim_CondRTs[RMstim_CondRTs$Condition=="Multiple",2]`, *SE* =
+`r RMstim_Condses['Single']`) than in the single-target condition (*M* = `r RMstim_CondRTs[RMstim_CondRTs$Condition=="Single",2]`, *SE* =
+`r RMstim_Condses['Single']`). 
+
+
+
+```{r rec mem perf graph, echo= FALSE, message=FALSE, warning=TRUE, results='asis'}
+RMstim_Condition_accs <-
+  RM_accs %>% group_by(Stimulus, Condition, Day) %>% summarise(mean_meanacc = mean(meanacc))
+
+RMstim_Condition_accs_se <- arr2df(se2(RM_accs, facs=c('Stimulus', 'Condition', 'Day'), 
+                             dvnam="meanacc"))
+
+colnames(RMstim_Condition_accs_se)[colnames(RMstim_Condition_accs_se)=="y"] <- "se_meanacc"
+
+plot.df.accs <- full_join(RMstim_Condition_accs, RMstim_Condition_accs_se) %>% mutate (stat= "Accuracy")
+names(plot.df.accs)[names(plot.df.accs) %in% c("mean_meanacc", "se_meanacc")] <-
+  c("M", "SE")
+
+
+RMstim_Condition_RTs <-
+  RMdats_RTs %>% group_by(Stimulus, Condition, Day) %>% summarise(mean_meancorRT = mean(meancorRT))
+
+RMstim_Condition_RTs_se <- arr2df(se2(RMdats_RTs, facs=c('Stimulus', 'Condition', 'Day'), 
+                             dvnam="meancorRT"))
+
+colnames(RMstim_Condition_RTs_se)[colnames(RMstim_Condition_RTs_se)=="y"] <- "se_meancorRT"
+
+plot.df.RTs <- full_join(RMstim_Condition_RTs, RMstim_Condition_RTs_se) %>% mutate (stat= "Response Time")
+names(plot.df.RTs)[names(plot.df.RTs) %in% c("mean_meancorRT", "se_meancorRT")] <-
+  c("M", "SE")
+```
+
+
+
+
+```{r rec mem plot, echo= FALSE, message=FALSE, warning=TRUE, results='asis', fig.cap=RM_cap}
+test <- rbind(plot.df.accs, plot.df.RTs)
+
+ggplot(test, aes(factor(Stimulus), M)) +
+  geom_point(stat = "identity",
+             aes(colour = Condition),
+             size = 3) + geom_errorbar(aes(
+               ymax = M + SE,
+               ymin = M - SE,
+               colour = Condition
+             )) + facet_grid(stat~ Day, scales="free")  + xlab("Stimulus") +
+              ylab("")
+
+
+
+
+
+
+```
+
+Table S14
+
+*Wald Chi-Square significance tests for recognition memory accuracy to the PM targets. A generalized linear
+mixed-effects model was fitted to every PM trial, with a binomial probit link 
+function. Random intercepts were included for each
+participant. In addition to examining experimental condition (single-target versus multiple-target), 
+we included a factor denoting whether it was the first or second day that the
+participant came in to perform the experiment, referred to as "Day".*
+
+```{r rec_mem_acc_model , echo= FALSE, message=TRUE, warning=TRUE, results='asis'}
+# 
+# RM_acc_glmer_top <-
+#   glmer(C~ Stimulus * Condition * Day + (1 |s),
+#         data = RMdats,
+#         family = binomial(link = "probit"))
+# 
+# ss <- getME(RM_acc_glmer_top,c("theta","fixef"))
+# RM_acc_glmer_top2 <- update(RM_acc_glmer_top,
+#                              start = ss,
+#                              control = glmerControl(optCtrl = list(maxfun = 2e4)))
+# 
+# 
+# ss2 <- getME(RM_acc_glmer_top2,c("theta","fixef"))
+# RM_acc_glmer_top3 <- update(RM_acc_glmer_top2,
+#                              start = ss2,
+#                              control = glmerControl(optCtrl = list(maxfun = 2e4)))
+# 
+# save(RM_acc_glmer_top3, file="img/RMacc_model.RData")
+
+load("img/RMacc_model.RData")
+
+pandoc.table(make_model_table(Anova(RM_acc_glmer_top3)))
+
+```
+Table S10
+
+*Follow up significance tests of the difference in recognition memory accuracy for 
+old (PM targets) as compared with non-PM targets. 
+The z.ratio is the mean of the effect divided by its standard error.
+Tukey adjustments were applied to the included p-values.*
+
+```{r rec_mem_acc_contrasts , echo= FALSE, message=FALSE, warning=FALSE, results='asis'}
+
+pandoc.table(
+  round_ps(summary(
+    contrast(
+      lsmeans(RM_acc_glmer_top3, ~Condition|Stimulus)
+      , method="pairwise"))%>% select(-c(df, estimate, SE))))
+
+
+```
+
+Table S16
+
+*Wald Chi-Square significance tests for recognition memory RT to the PM targets. A linear
+mixed-effects model was fitted to mean correct PM RTs. Random intercepts were included for each
+participant. In addition to examining experimental condition (single-target versus multiple-target), 
+we included a factor denoting whether it was the first or second day that the
+participant came in to perform the experiment, referred to as "Day".*
+
+```{r rec mem RT model , echo= FALSE, message=TRUE, warning=TRUE, results='asis'}
+
+RM_RT_model <-
+  lmer(meancorRT ~ Stimulus * Condition * Day + (1 |s),
+        data = RMdats_RTs)
+
+pandoc.table(make_model_table(Anova(RM_RT_model)))
+
+
+```
+

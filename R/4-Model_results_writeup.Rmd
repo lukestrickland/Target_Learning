@@ -1,0 +1,498 @@
+---
+title: "Target Learning Model results"
+author: "ljgs"
+date: "04/08/2020"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+by Luke Strickland
+
+
+```{r load_samples_generate_pps, echo= FALSE , results = "hide", message=FALSE, warning=FALSE}
+source("dmc/dmc.R")
+source("dmc/dmc_extras.R")
+source("R/fit_plots.R")
+source("R/functions.R")
+load_model ("LBA", "lbaN_B_learning_exp.R")
+library(ggplot2)
+library(dplyr)
+library(pander)
+options(scipen=999)
+
+theme_set(theme_simple())
+
+load("samples_data/learningexp_alphbound_samples.RData")
+
+# pp <- h.post.predict.dmc(learningexp_alphbound_samples,
+#                               save.simulation = TRUE,
+#                               cores = 14)
+# 
+# save(pp, file="samples_data/pp_exp.RData")
+
+load("samples_data/pp_exp.RData")
+
+change_pp_faclabels <- function(pp) {
+  for (i in 1:length(pp)){
+    pp[[i]]$S <- factor(pp[[i]]$S,
+                        levels=c(
+                          "n", "w", "p"
+                        ),
+                        labels=c(
+                          "Non-word Trial", "Word Trial", "PM Trial"
+                        ))
+    attr(pp[[i]], "data")$S<- factor(attr(pp[[i]], "data")$S,
+                        levels=c(
+                          "n", "w", "p"
+                        ),
+                        labels=c(
+                          "Non-word Trial", "Word Trial", "PM Trial"
+                        ))
+    
+    
+    pp[[i]]$cond <- factor(pp[[i]]$cond,
+                        levels=c(
+                          "S", "M"
+                        ),
+                        labels=c(
+                          "Single", "Multiple"
+                        ))
+    attr(pp[[i]], "data")$cond<- factor(attr(pp[[i]], "data")$cond,
+                        levels=c(
+                          "S", "M"
+                        ),
+                        labels=c(
+                          "Single", "Multiple"
+                        ))
+  }
+  pp
+}
+
+pp_orig <- pp
+
+pp <- change_pp_faclabels(pp)
+
+```
+
+
+```{r calc_average_model_fit, echo= FALSE , results = "hide", message=FALSE, warning=FALSE}
+# # #
+# avfit <- GET.fitgglist.dmc(pp, factors = c("S", "cond"))
+# #
+# avfit_noR <-
+#   GET.fitgglist.dmc(pp, factors = c("S", "cond"), noR = TRUE)
+# #
+# sim <- do.call(rbind, pp)
+# # Do the same for the data
+# data <- lapply(pp, function(x) attr(x, "data"))
+# data <- do.call(rbind, data)
+# # #
+# avfit_noPRs <- get.fitgglist.dmc(sim %>% filter(R!='P'),
+#                    data %>% filter(R!='P'),
+#                    factors = c("S", "cond"), noR = TRUE)
+# 
+# #Get average fits for learning effect
+# sim$stimtrialcounter <- sim$stimtrialcounter + 1
+# data$stimtrialcounter <- data$stimtrialcounter + 1
+# 
+# sim$stimtrialcounter[sim$cond=="Single"] <- ceiling(sim$stimtrialcounter
+#                                                             [sim$cond=="Single"]/8)
+# 
+# data$stimtrialcounter[data$cond=="Single"] <- ceiling(data$stimtrialcounter
+#                                                             [data$cond=="Single"]/8)
+# 
+# avfit_learning <- get.fitgglist.dmc(sim, data, factors=c("S", "cond", "stimtrialcounter"), noR=F)
+# 
+# avfit_learning_noPRs <- get.fitgglist.dmc(sim %>% filter(R!='P'),
+#                                     data %>% filter(R!='P'),
+#                                     factors=c("S", "cond", "stimtrialcounter"), noR=T)
+# 
+# save(avfit, avfit_noR, avfit_noPRs, avfit_learning, avfit_learning_noPRs,
+#     file="samples_data/avfit_exp.RData")
+
+load("samples_data/avfit_exp.RData")
+
+```
+
+# Model Fit
+
+Figure 5 and 6 display the posterior predictions of the model. Overall, the model provided a close fit to the observed trends in accuracy and RT. The plots reveal some degree of miss-fit to errors on PM trials. However, as PM trials are quite rare, and PM accuracy quite high, this represents a very small amount of observed data. Figure 7 demonstrates that the model is able to fairly accurately capture trends in PM accuracy and RT over repeated presentations of the PM target, suggesting that our linear model of learning is reasonable over the range of PM target presentations in the experiment, but with a tendency to underestimate PM accuracy early in the block, particularly for the first 8 presentations of the single target.
+
+```{r echo= FALSE}
+acc_pp_cap <- "Figure 5. Posterior predictions for accuracies, averaged over participants. The model predictions correspond to the white circles, the posterior means correspond to the black shaded dots. The error bars display the 95% posterior credible intervals of the predictions."
+```
+
+
+```{r evaluate_model_fit_acc, echo= FALSE , results = "hide", message=FALSE, warning=FALSE, fig.width = 7, fig.height=2, fig.cap=acc_pp_cap}
+
+
+PM_acc <-
+  avfit[['pps']][avfit[['pps']]$R == "P" &
+                   avfit[['pps']]$S == "PM Trial", ]
+PM_acc  <- PM_acc[, !colnames(PM_acc) %in% "R"]
+
+ongoing_acc <-
+  avfit[['pps']][avfit[['pps']]$R != "P" &
+                   avfit[['pps']]$S != "PM Trial" &
+                   substr(avfit[['pps']]$S,1,1) ==
+                   (avfit[['pps']]$R), ]
+ongoing_acc <- ongoing_acc[, -3]
+
+both_acc <-  rbind(PM_acc, ongoing_acc)
+both_acc$cond <- factor(both_acc$cond, levels=c("Single", "Multiple"),
+                        labels=c("Single-target", "Multiple-target"))
+
+ggplot.RP.dmc(both_acc, xaxis = "cond") + xlab("PM condition") +
+  ylab("Accuracy") +
+    theme(text = element_text(size=12))
+
+```
+```{r echo= FALSE}
+RT_pp_cap <- "Figure 6. Posterior predictions for response time (RT), pooled over participants. The model predictions correspond to the white circles, the posterior means correspond to the black shaded dots. The error bars display the 95% posterior credible intervals of the predictions. Three quantiles of RT are depicted. The bottom quantiles on each plot represent the 0.1 quantile, the middle the median RT, and the top the 0.9 quantile of RT.
+"
+```
+
+```{r evaluate_model_fit_RT, echo= FALSE , results = "hide", message=FALSE, warning=FALSE, fig.cap=RT_pp_cap}
+
+ongoing_RT <-
+  avfit[['RTs']][avfit[['RTs']]$R != "P" &
+                   avfit[['RTs']]$S != "PM Trial", ] %>% mutate(
+                     R=factor(
+                       (S=='Non-word Trial' & R=="N")|(S=='Word Trial' & R =='W'), 
+                       levels=c("FALSE", "TRUE"),
+                       labels=c("Error", "Correct")
+                       ))
+
+
+PMRT_correct <-
+  avfit[['RTs']][avfit[['RTs']]$S == "PM Trial" & avfit[['RTs']]$R == "P" &
+                       !(is.na(avfit[['RTs']]$data)), ] %>% mutate(R="Correct")
+
+PMRT_error <-
+  avfit_noPRs[['RTs']][avfit_noPRs[['RTs']]$S == "PM Trial" &
+                       !(is.na(avfit_noPRs[['RTs']]$data)), ]%>% mutate(R="Error") %>% 
+                        select(S,cond, R, everything())
+
+both_RTs <- rbind(ongoing_RT, PMRT_correct, PMRT_error)
+
+both_RTs$cond <- factor(both_RTs$cond, levels=c("Single", "Multiple"),
+                        labels=c("Single-target", "Multiple-target"))
+
+ggplot.RT.dmc(both_RTs, xaxis = "cond", panels.ppage = 6, nrow=3)+ xlab("PM condition") +
+  ylab ("Response Time (seconds)")
+
+```
+
+```{r echo= FALSE}
+Learning_pp_cap <- "Figure 7. Posterior predictions for effects of multiple PM target presentations on PM accuracy and correct PM response time (RT). The model predictions correspond to the white circles, the posterior means correspond to the black shaded dots. The error bars display the 95% posterior credible intervals of the predictions. In the RT graphs, three quantiles of RT are depicted. The bottom quantiles on each plot represent the 0.1 quantile, the middle the median RT, and the top the 0.9 quantile of RT. PM Trial Position refers to the position of the PM trial within the experimental block. Within the multiple target PM blocks, each PM trial position contained exactly 1 presentation of each possible PM target stimulus. In the single target blocks, only one PM target was presented, and thus each trial position included eight repetitions of the same PM target.
+"
+```
+
+```{r model_fit_learning, echo= FALSE , results = "hide", message=FALSE, warning=FALSE, fig.width = 8, fig.height=5, fig.cap= Learning_pp_cap}
+
+
+PM_learning_acc <-
+  avfit_learning[['pps']][avfit_learning[['pps']]$R == "P" &
+                   avfit_learning[['pps']]$S == "PM Trial", ]
+PM_learning_acc  <- PM_learning_acc[, !colnames(PM_learning_acc) %in% "R"]
+
+PM_learning_acc$cond <- factor(PM_learning_acc$cond, levels=c("Single", "Multiple"),
+                        labels=c("Single-target", "Multiple-target"))
+
+
+learning1 <- ggplot.RP.dmc(PM_learning_acc, xaxis = "stimtrialcounter") + xlab("") + 
+  ylab("Accuracy")
+
+PM_learning_RT <-
+  avfit_learning[['RTs']][avfit_learning[['RTs']]$S == "PM Trial" & 
+                   avfit_learning[['RTs']]$R == "P" &
+                       !(is.na(avfit_learning[['RTs']]$data)), ]
+
+PM_learning_RT$R <- "Correct"
+
+PM_learning_RT$cond <- factor(PM_learning_RT$cond, levels=c("Single", "Multiple"),
+                        labels=c("Single-target", "Multiple-target"))
+
+learning2 <- ggplot.RT.dmc(PM_learning_RT, xaxis = "stimtrialcounter", do.quantiles=T) + 
+  xlab("PM Trial Position") +
+  ylab ("Response Time (seconds)")
+
+grid.arrange(learning1, learning2)
+
+
+```
+
+
+
+
+```{r evaluate_model_params_calc, echo= FALSE , results = "hide", message=FALSE, warning=FALSE}
+# 
+#  log_alpha <- function(samples){
+#   samples$theta[,'ALPH',] <- log(samples$theta[,'ALPH',])
+#   samples
+# }
+# 
+# #Transform slopes to scale reported in paper - total amount of learning over experiment
+# 
+# tmp <-
+#   lapply(learningexp_alphbound_samples, log_alpha)
+# 
+# msds <- get.msds(tmp)
+# 
+# save(msds, file=
+#       "samples_data/msds_learningexp_samples.RData")
+
+paste.msd <- function(x) paste(signif(x["M"],2), "(", 
+                               signif(x["SD"],2), ")", sep="")
+
+zpvec <- function(samples, fun){
+    effect<- group.inference.dist(samples, fun)
+    Z <- mean(effect)/sd(effect)
+    p <- minp(effect)
+    if(p<.001) p <- "< .001" else {
+      p = round(p,3)
+      p= paste("= .", 
+      substr(p,3,10), sep="")
+    }
+    c(round(Z,2), p)
+}
+
+load("samples_data/msds_learningexp_samples.RData")
+
+
+```
+
+
+# Parameter Estimates
+In order to examine parameter estimates across experimental conditions, we created a ‘subject-averaged’ 
+distribution of parameter estimates, which
+averaged the values of each parameter over all subjects for each posterior sample. 
+The posterior mean of the  *A* parameter was `r round(msds['A',1],2)` (*SD* = `r round(msds['A',2],2)`),
+the mean of the non-decision time parameter was  `r round(msds['t0',1],2)`
+(*SD* = `r signif(msds['t0',2],2)`), and the posterior mean of the *sv* parameter
+towards decisions matching the correct response was `r signif(msds['sd_v.t',1],2)`
+(*SD* = `r signif(msds['sd_v.t',2],2)`). In the subsequent sections, we reviewed the patterns in other parameters across experimental conditions, particularly focusing on how they vary across the multiple target and single target PM conditions. To statistically test parameter differences, we use a posterior *p* value based on the number of times that one parameter was sampled higher in than the other. We report the posterior *p* in the direction against observed effects, to be consistent with intuition about *p* values. Thus, if we observed parameter x was mostly larger than parameter y, we would report posterior *p* as the proportion of samples on which y was larger than x. In the supplementary materials, we explore how the parameter differences reported in text related to the observed performance data with simulations. 
+
+```{r echo= FALSE , results = "hide", message=FALSE, warning=FALSE}
+wW <- zpvec(learningexp_alphbound_samples, function(thetas)  thetas[,"mean_v.SwW",, drop=F] -
+        thetas[,"mean_v.MwW",, drop=F])
+
+nN <- zpvec(learningexp_alphbound_samples, function(thetas)  thetas[,"mean_v.SnN",, drop=F] -
+        thetas[,"mean_v.MnN",, drop=F])
+
+wN <- zpvec(learningexp_alphbound_samples, function(thetas)  thetas[,"mean_v.MwN",, drop=F] -
+        thetas[,"mean_v.SwN",, drop=F])
+
+nW <- zpvec(learningexp_alphbound_samples, function(thetas)  thetas[,"mean_v.MnW",, drop=F] -
+        thetas[,"mean_v.SnW",, drop=F])
+
+LRNMP <- zpvec(learningexp_alphbound_samples, function(thetas)  thetas[,'LRN.MPP',, drop=F])
+LRNSP <- zpvec(learningexp_alphbound_samples, function(thetas)  thetas[,'LRN.SPP',, drop=F])
+
+
+LRNM <- zpvec(learningexp_alphbound_samples, function(thetas)  thetas[,'LRN.MPP',, drop=F])
+
+LRNS <- zpvec(learningexp_alphbound_samples, function(thetas)  thetas[,'LRN.SPP',, drop=F])
+
+LRNMPSP <- zpvec(learningexp_alphbound_samples, function(thetas)  thetas[,'LRN.MPP',, drop=F]-
+                     thetas[,'LRN.SPP',, drop=F])
+
+
+
+```
+
+## PM Learning
+
+As reviewed, our learning theory dictates that both PM conditions shared a common asymptote for the overall rate of 
+PM accumulation on PM trials(*M* = `r round(msds['mean_v.pP',1],2)`, 
+*SD* = `r round(msds['mean_v.pP',2],2)`), the inhibition of word accumulation on PM trials
+(*M* = `r round(msds['inh.pm_W',1],2)`, 
+*SD* = `r round(msds['inh.pm_W',2],2)`)
+and the inhibition of non-word accumulation on PM trials
+(*M* = `r round(msds['inh.pm_N',1],2)`, 
+*SD* = `r round(msds['inh.pm_N',2],2)`). In addition, both conditions shared
+a common learning rate (log (α) *M* = `r round(msds['ALPH',1],2)`, 
+log (α) *SD* = `r round(msds['ALPH',2],2)`). However, conditions were allowed to vary
+in terms of *D*, which represents the difference between the initial accumulation
+and inhibition rates and the asymptote values. We found that the *D* parameter
+was above 0 for the multiple-target condition(*M* = `r round(msds['LRN.MPP',1],2)`, 
+*SD* = `r round(msds['LRN.MPP',2],2)`), 
+indicating learning, *Z* = `r LRNM[1] `, *p* `r LRNM[2] `. However, the *D* parameter
+was below 0 for the single-target condition, actually indicating that performance
+got worse with PM target repetitions (*M* = `r round(msds['LRN.SPP',1],2)`, 
+*SD* = `r round(msds['LRN.SPP',2],2)`), *Z* = `r LRNS[1] `, *p* `r LRNS[2] `.
+
+
+```{r echo= FALSE}
+Threshold_cap <- "Figure 8. Estimates of thresholds. The shapes indicate the posterior means and the error bars correspond to the mean plus or minus the posterior standard deviation.
+"
+```
+
+## Proactive Control
+
+```{r echo= FALSE , results = "hide", message=FALSE, warning=FALSE}
+BW <- zpvec(
+  learningexp_alphbound_samples,
+  function (thetas) ((thetas[,"B.M.1.W",, drop=F] -thetas[,"B.S.1.W",, drop=F]) + 
+(thetas[,"B.M.2.W",, drop=F] - thetas[,"B.S.2.W",, drop=F]) )/2 ) 
+
+BN <- zpvec(
+  learningexp_alphbound_samples,
+  function (thetas) ((thetas[,"B.M.1.N",, drop=F] -thetas[,"B.S.1.N",, drop=F]) + 
+(thetas[,"B.M.2.N",, drop=F] - thetas[,"B.S.2.N",, drop=F]) )/2 ) 
+
+BP <- zpvec(
+  learningexp_alphbound_samples,
+  function (thetas) ((thetas[,"B.M.1.P",, drop=F] -thetas[,"B.S.1.P",, drop=F]) + 
+(thetas[,"B.M.2.P",, drop=F] - thetas[,"B.S.2.P",, drop=F]) )/2 ) 
+
+
+```
+
+The obtained threshold estimates are depicted in Figure 8. We expected participants in the multiple-target PM condition might increase their PM thresholds, due to increased perceived task difficulty or a sense of the weaker learning of targets in the multiple-target condition. Consistent with this, there were very large differences between the PM threshold in the multiple-target condition (Day 1 *M* = `r round(msds['B.M.1.P',1],2)`, *SD* = `r round(msds['B.M.1.P',2],2)`;  Day 2 *M* = 
+`r round(msds['B.M.2.P',1],2)`, *SD* = `r round(msds['B.M.2.P',2],2)`) and the PM threshold in the 
+single target PM condition (Day 1 *M* = 
+`r round(msds['B.S.1.P',1],2)`, *SD* = `r round(msds['B.S.1.P',2],2)`;  Day 2 *M* = 
+`r round(msds['B.S.2.P',1],2)`, *SD* = `r round(msds['B.S.2.P',2],2)`), *Z* = 
+`r BP[1] `, *p* `r BP[2] `.
+
+```{r evaluate_model_params_B, echo= FALSE , results = "hide", message=FALSE, warning=FALSE, fig.cap=Threshold_cap, fig.width = 7, fig.height=2,}
+Bs <- msds[grep ("B", rownames(msds)),]
+## new thing make a data fram efor ggplot
+Bs$PM <- NA; Bs$day <- NA; Bs$R <- NA
+Bs$PM[grep ("M", rownames(Bs))] <- 
+  "Multiple-target";Bs$PM[grep ("S", rownames(Bs))] <- "Single-target"
+Bs$R[grep ("N", rownames(Bs))] <- "Non-word";Bs$R[grep ("W", rownames(Bs))] <- 
+  "Word";Bs$R[grep ("P", rownames(Bs))] <- "PM"
+Bs$day[grep ("1", rownames(Bs))] <- "One";Bs$day[grep ("2", rownames(Bs))] <- 
+  "Two"
+
+plot.df <- Bs
+plot.df$day <- factor(plot.df$day, levels=c("One", "Two"))
+plot.df$R <- factor(plot.df$R, levels=c("Non-word", "Word", "PM"))
+ggplot(plot.df, aes(factor(day),M)) + 
+  geom_point(stat = "identity",aes(shape=PM, fill=PM), size=2) +
+  geom_errorbar(aes(ymax = M + SD, ymin = M - SD, width = 0.2)) +
+  xlab("Session") + ylab("Threshold") +
+  theme(
+    axis.line.x = element_line(),
+    axis.line.y = element_line()
+  )+geom_line(aes(group=PM, y=M), linetype=2) +
+  facet_grid(. ~ R)
+
+```
+
+In addition to increasing PM thresholds, participants also increased ongoing task thresholds in multiple-target blocks. Thresholds towards making a word response were higher in the multiple-target condition (day 1 *M* = 
+`r round(msds['B.M.1.W',1],2)`, *SD* = `r round(msds['B.M.1.W',2],2)`;  day 2 *M* = 
+`r round(msds['B.M.2.W',1],2)`, *SD* = `r round(msds['B.M.2.W',2],2)`), than in the 
+single-target condition, (day 1 *M* = 
+`r round(msds['B.S.1.W',1],2)`, *SD* = `r round(msds['B.S.1.W',2],2)`;  day 2 *M* = 
+`r round(msds['B.S.2.W',1],2)`, *SD* = `r round(msds['B.S.2.W',2],2)`) *Z* = 
+`r BW[1] `, *p* `r BW[2] `). Non-word thresholds were also higher in the multiple target
+condition (day 1 *M* = 
+`r round(msds['B.M.1.N',1],2)`), *SD* = `r round(msds['B.M.1.N',2],2)`; 
+day 2 *M* = 
+`r round(msds['B.M.2.N',1],2)`, *SD* = `r round(msds['B.M.2.N',2],2)`)
+than the single target 
+condition (day 1 *M* = 
+`r round(msds['B.S.1.N',1],2)`, *SD* = `r round(msds['B.S.1.N',2],2)`;  day 2 *M* = 
+`r round(msds['B.S.2.N',1],2)`, *SD* = `r round(msds['B.S.2.N',2],2)`) , *Z* = 
+`r BN[1] `, *p* `r BN[2] `, although this difference was generally smaller and not substantial on day 1.
+The finding that non-word threshold increases were smaller than word thresholds is consistent
+with Heathcote et al. (2015)'s previous modelling of a PM task that only included word PM targets. 
+
+```{r echo= FALSE}
+rates_cap <- "Figure 9. Estimates of accumulation rates. The circles indicate the posterior means and the error bars correspond to the mean plus or minus the posterior standard deviation.
+"
+```
+
+
+
+
+## Capacity Sharing
+
+Estimates for accumulation rates are depicted in Figure 9. Previous modelling of 
+simple paradigms such as lexical decision find no capacity effects associated with PM 
+(e.g., Strickland et al., 2018), and thus we did not expect to find reduced 
+ongoing task capacity in the multiple-target condition as compared with the single-target condition. 
+In line with this, correct accumulation rates to word trials were not 
+substantially lower in the multiple-target condition (*M* = `r round(msds['mean_v.MwW',1],2)`, *SD* = `r round(msds['mean_v.MwW',2],2)`)
+compared with the single-target condition, (*M* = `r round(msds['mean_v.SwW',1],2)`, *SD* = `r round(msds['mean_v.SwW',2],2)`),
+ *Z* = `r wW[1] `, *p* `r wW[2] `. There were also no substantial differences
+between the correct non-word accumulation rates across
+multiple (*M* = `r round(msds['mean_v.MnN',1],2)`, *SD* = `r round(msds['mean_v.MnN',2],2)`) and 
+single (*M* = `r round(msds['mean_v.SnN',1],2)`, *SD* = `r round(msds['mean_v.SnN',2],2)`) 
+target conditions , *Z* = `r nN[1] `, *p* `r nN[2] `. These results suggest no
+appreciable loss of ongoing task capacity across multiple and single-target conditions. 
+
+```{r evaluate_model_params_V, echo= FALSE , results = "hide", message=FALSE, warning=FALSE, fig.cap= rates_cap}
+mvs <- msds[grep ("mean_v", rownames(msds)),]
+mvs$PM <- NA; mvs$R <- NA; mvs$S<- NA
+SPM <- grep ("S", rownames(mvs))
+MPM <- grep ("M", rownames(mvs))
+both <- setdiff(1:length(mvs$M), c(SPM, MPM))
+
+
+mvs$PM[SPM]<- "Single-target"; mvs$PM[MPM]<- "Multiple-target"
+mvs$R[grep ("N", rownames(mvs))] <- "Non-word";mvs$R[grep ("W", rownames(mvs))] <- 
+  "Word"; mvs$R[grep ("P", rownames(mvs))] <- "PM"
+mvs$R[grep ("WN", rownames(mvs))] <- "Non-word"
+
+mvs$S[grep ("n", rownames(mvs))] <- "Non-word Trial";mvs$S[grep ("w", rownames(mvs))] <- 
+  "Word Trial";mvs$S[grep ("p", rownames(mvs))] <-  "PM Trial"
+mvs$PM[rownames(mvs)=="mean_v.fa"] <- "False alarm"; mvs$R[rownames(mvs)=="mean_v.fa"] <- "PM"
+mvs$S[rownames(mvs)=="mean_v.fa"] <- "Word"
+fa2 <- mvs[rownames(mvs)=="mean_v.fa",]; fa2$S <- "Non-word"
+mvs <- rbind(mvs, fa2)
+
+
+
+plot.df <- mvs
+plot.df$PM <- factor(plot.df$PM, levels=c("Single-target", "Multiple-target", "False alarm"))
+plot.df$S <- factor(plot.df$S, levels=c("Non-word Trial", "Word Trial", "PM Trial"))
+plot.df$R <- factor(plot.df$R, levels=c("Non-word", "Word", "PM"))
+plot.df <- plot.df[!plot.df$PM=="False alarm" & ! plot.df$S=="PM Trial",]
+names(plot.df)[4] <- "Accumulator"
+
+fig1 <- ggplot(plot.df, aes(factor(PM),M)) + 
+  geom_point(stat = "identity", size=2.5) +
+  geom_errorbar(aes(ymax = M + SD, ymin = M - SD, width = 0.3))+
+  xlab("") + ylab("Correct Accumulation Rate") +
+  theme(
+    axis.line.x = element_line(),
+    axis.line.y = element_line()
+  )+ geom_line(aes(group=Accumulator, y=M), linetype=2) +
+  facet_grid(. ~ S,scales = "free", space = "free")  +
+  labs(Accumulator="Latent Accumulator") +ylim(1.7,2)+
+    theme(text = element_text(size=11))
+
+fig2 <- ggplot(plot.df %>% filter(S!="PM Trial"), aes(factor(PM),M)) + 
+  geom_point(stat = "identity", size=2.5) +
+  geom_errorbar(aes(ymax = M + SD, ymin = M - SD, width = 0.3))+
+  xlab("PM condition") + ylab("Error Accumulation Rate") +
+  theme(
+    axis.line.x = element_line(),
+    axis.line.y = element_line()
+  )+ geom_line(aes(group=Accumulator, y=M), linetype=2) +
+  facet_grid(. ~ S,scales = "free", space = "free")  +
+  labs(Accumulator="Latent Accumulator") +ylim(0,-1)+
+    theme(text = element_text(size=11))
+
+grid.arrange(fig1, fig2, layout_matrix=matrix(nrow=2, ncol=2, c(1,2,1,2)))
+
+```
+
+We found mixed results regarding the error accumulation rates. For word trials, 
+error accumulation rates were lower in the multiple-target condition 
+(*M* = `r round(msds['mean_v.MwN',1],2)`, *SD* = `r round(msds['mean_v.MwN',2],2)`)
+than the single-target condition (*M* = `r round(msds['mean_v.SwN',1],2)`, *SD* = `r round(msds['mean_v.SwN',2],2)`), 
+*Z* = `r abs(as.numeric(wN[1])) `, *p* `r wN[2] `, consistent with a gain in capacity
+in the multiple-target condition. In contrast, for non-word trials error 
+accumulation rates were higher in the multiple condition (*M* = `r round(msds['mean_v.MnW',1],2)`, *SD* = `r round(msds['mean_v.MnW',2],2)`)
+than the single-target condition
+(*M* = `r round(msds['mean_v.SnW',1],2)`, *SD* = `r round(msds['mean_v.SnW',2],2)`)
+, *Z* = `r nW[1] `, *p* `r nW[2] `, consistent with a loss of capacity. Overall, 
+given the error accumulation rates indicated one in favor of more capacity for
+the multiple-target condition, and one indicative of reduced capacity, they did 
+not provide robust evidence for capacity sharing with multiple target PM.

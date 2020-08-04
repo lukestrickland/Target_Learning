@@ -1,0 +1,221 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+
+### Recovery of the learning model
+
+```{r echo= FALSE , results = "hide", message=FALSE, warning=FALSE}
+require("stringr")
+require("cowplot")
+library(gridExtra)
+# 
+options(digits=2)
+# 
+# # 
+# # 
+# # rm(list=ls())
+# # #recovered samples
+load("samples_data/recov_exp_learning_alphbound.RData")
+# # #fits to actual data, posterior means of which were used to generate
+# # # recovery
+load("samples_data/learningexp_alphbound_samples.RData")
+# #
+source("dmc/dmc.R")
+source("dmc/dmc_extras.R")
+# #
+# msds <- get.msds(learningexp_alphbound_samples)
+# #
+# msds["ALPH", "M"] <- log(msds["ALPH", "M"])
+# 
+# 
+# 
+# log_alpha <- function(samples){
+#   samples$theta[,'ALPH',] <- log(samples$theta[,'ALPH',])
+#   samples
+# }
+# 
+# 
+# 
+# recov_exp_learning_alphbound <-
+#   lapply(recov_exp_learning_alphbound, log_alpha)
+# #
+# post_summaries <- get.participant.mean.CIs(
+#   recov_exp_learning_alphbound
+# )
+# 
+# sim.p.vector <- msds$M; names(sim.p.vector) <- rownames(msds)
+# 
+# save(msds, sim.p.vector,
+#      post_summaries,
+#      file="img/recovery_exponential_learning_alphbound.RData")
+
+load("img/recovery_exponential_learning_alphbound.RData")
+
+ggplot.recov<- function(ggdf, ncol=10) {
+  ggplot(ggdf, aes(reps, M))+
+    geom_point(size=0.25)+
+    geom_hline(aes(yintercept=data), linetype=1, size=0.5)+ylab("")+ xlab("")+
+    theme(axis.text.x=element_blank())+
+    geom_ribbon(data=ggdf,aes(ymin=LCI,ymax=HCI), alpha=0.3)+ facet_wrap(~param, ncol=ncol)+
+    theme(text = element_text(size = 12))
+
+}
+
+recov_B <- get.ggdf.recov(post_summaries, msds, grepchr="B")
+
+recov_mv <- get.ggdf.recov(post_summaries, msds, grepchr="mean_v")
+
+recov_mv$param[recov_mv$param==
+                 "mean_v.pP"] <- "asymptote.pP"
+
+recov_inh<- get.ggdf.recov(post_summaries, msds, grepchr="inh")
+
+recov_inh$param[recov_inh$param==
+                 "inh.pm_N"] <- "inh.asymptote.N"
+
+recov_inh$param[recov_inh$param==
+                 "inh.pm_W"] <- "inh.asymptote.W"
+
+recov_D <- get.ggdf.recov(post_summaries, msds, grepchr="LRN")
+
+recov_D$param[recov_D$param==
+                 "LRN.SPP"] <- "D.S"
+
+recov_D$param[recov_D$param==
+                 "LRN.MPP"] <- "D.M"
+
+recov_alph <- get.ggdf.recov(post_summaries, msds, grepchr="ALPH")
+
+recov_alph$param <- "log(α)"
+
+recov_sv_t0_A <- get.ggdf.recov(post_summaries, msds, grepchr="A$|sd_v|t0")
+
+recov_sv_t0_A$param[recov_sv_t0_A$param=="sd_v.t"] <- "sv.match"
+recov_sv_t0_A$param[recov_sv_t0_A$param=="t0"] <- "non-decision time"
+
+
+Bdiff <- function (thetas) (thetas[,"B.M.1.P",, drop=F] + 
+                              thetas[,"B.M.2.P",, drop=F])/2 -
+                            (thetas[,"B.S.1.P",, drop=F] + 
+                              thetas[,"B.S.2.P",, drop=F])/2
+
+Bdiff_true <- (sim.p.vector["B.M.1.P"] + 
+                              sim.p.vector["B.M.2.P"])/2 -
+                            (sim.p.vector["B.S.1.P"] + 
+                              sim.p.vector["B.S.2.P"])/2
+
+Bdiff_msd <- singlerep.mean.sd(recov_exp_learning_alphbound[1:100], Bdiff)
+
+
+
+
+sim.p.vector["LRN.MPP"] - sim.p.vector["LRN.SPP"]
+Ddiff <- function (thetas) thetas[,"LRN.MPP",, drop=F] - thetas[,"LRN.SPP",, drop=F]
+Ddiff_msd <- singlerep.mean.sd(recov_exp_learning_alphbound[1:100], Ddiff)
+
+
+SPPlrn <- function (thetas) thetas[,"LRN.SPP",, drop=F]
+SPPlrn_msd <- singlerep.mean.sd(recov_exp_learning_alphbound[1:100], SPPlrn)
+
+sim.p.vector["LRN.MPP"]
+MPPlrn <- function (thetas) thetas[,"LRN.MPP",, drop=F]
+MPPlrn_msd <- singlerep.mean.sd(recov_exp_learning_alphbound[1:100], MPPlrn)
+
+
+
+
+
+```
+
+Recovery of threshold parameters is shown in Figure S1. Although there 
+is a general upward bias, differences in thresholds are generally quite well estimated. This includes the difference observed in PM accumulator thresholds (true = `r Bdiff_true`,
+average posterior *M* = `r attr(Bdiff_msd, "vals")["M"]`, average posterior *SD* = 
+`r attr(Bdiff_msd, "vals")["SD"]`), which is the most challenging difference to estimate due to the relative scarcity of PM trials.
+
+```{r echo= FALSE}
+B_cap <- "Figure S1. Recovery of threshold parameters (B). We ran 100 simulated participants, which are represented on the x axis. We plot estimated posterior means (solid circles), and credible intervals (grey smear), for each of the 100 simulated participants. The solid line indicates the true value simulated from. M and S indicate the multiple-target condition and single-target condition, respectively. 1 and 2 indicate sessions one and two of the experiment. W, N, and P correspond to the word, non-word, and prospective memory accumulators."
+
+```
+
+
+```{r echo= FALSE , results = "asis", fig.cap= B_cap}
+ggplot.recov(recov_B, ncol=6) +xlab("") 
+```
+
+Recovery of the mean accumulation rate parameters, as well as the asymptotes for mean PM accumulation rates, is displayed in Figure S2. Rates appear relatively well estimated, although there is a general bias upwards. The estimation of PM accumulation rate asymptotes appears comparable to estimation of other accumulation rate parameters.
+
+```{r echo= FALSE}
+V_cap <- "Figure S2. Recovery of mean accumulation rate parameters (mean_v). We ran 100 simulated participants, which are represented on the x axis. We plot estimated posterior means (solid circles), and credible intervals (grey smear), for each of the 100 simulated participants. The solid line indicates the true value simulated from. M and S indicate the multiple-target condition and single-target condition, respectively. The lower case letters w, n and p indicate word, non-word, and PM target stimulus, respectively. W, N, and P correspond to the word, non-word, and prospective memory accumulators. For the PM accumulator, the asymptote parameter corresponding to the maximum possible PM accumulation rate is shown. We estimated a common rate for PM false alarms (mean_v.fa)."
+
+```
+
+
+```{r echo= FALSE , results = "asis", fig.width=7, fig.height=3.5, fig.cap=V_cap}
+ggplot.recov(recov_mv, ncol=5) +xlab("") 
+```
+
+Figure S3 displays recovery of the asymptote levels of PM-trial induced inhibition of ongoing task accumulation. Recovery of inhibition to “word” accumulation is generally reasonable. Inhibition of “non-word” accumulation is highly variable, and highly uncertain, consistent with us observing very few non-word responses on PM trials. We consider this estimation acceptable because inhibition of the non-word accumulator has very little effect on the observed model fits. 
+
+```{r echo= FALSE}
+inh_cap <- "Figure S3. Recovery of the asymptote of PM trial induced inhibition of ongoing task accumulation rates (inh.asymptote). We ran 100 simulated participants, which are represented on the x axis. We plot estimated posterior means (solid circles), and credible intervals (grey smear), for each of the 100 simulated participants. W and N correspond to the word and non-word accumulators, respectively."
+
+```
+
+```{r echo= FALSE , results = "asis" , fig.width=3, fig.height=2, fig.cap=inh_cap}
+ggplot.recov(recov_inh, ncol=5) +xlab("")  +
+    theme(text = element_text(size = 11))
+```
+
+
+Recovery of the log of the learning rate parameter is displayed in Figure S4. Overall, 
+it appears reasonable (although quite variable).
+
+```{r echo= FALSE}
+alph_cap <- "Figure S4. Recovery of the log of the learning rate parameter (α). We ran 100 simulated participants, which are represented on the x axis. We plot estimated posterior means (solid circles), and credible intervals (grey smear), for each of the 100 simulated participants."
+
+```
+
+```{r echo= FALSE , results = "asis", fig.width=1.6, fig.height=2, fig.cap=alph_cap}
+ggplot.recov(recov_alph) +xlab("") 
+```
+
+
+ Recovery of the *D* parameters of the exponential learning equation is displayed in
+Figure S5. Although variable, recovery is reasonable on average, for both the single-target
+PM condition (true = `r sim.p.vector["LRN.SPP"]`,
+average posterior *M* = `r attr(SPPlrn_msd, "vals")["M"]`, average posterior SD = 
+`r attr(SPPlrn_msd, "vals")["SD"]`), and multiple-target condition
+(true = `r sim.p.vector["LRN.MPP"]`,
+average posterior *M* = `r attr(MPPlrn_msd, "vals")["M"]`, average posterior SD = 
+`r attr(MPPlrn_msd, "vals")["SD"]`). The difference between the 
+parameters was somewhat reasonably recovered (true = `r sim.p.vector["LRN.MPP"] - sim.p.vector["LRN.SPP"]`,
+average posterior *M* = `r attr(Ddiff_msd, "vals")["M"]`, average posterior SD = 
+`r attr(Ddiff_msd, "vals")["SD"]`). 
+
+
+
+```{r echo= FALSE}
+D_cap <- "Figure S5. Recovery of the D parameter, that indexes the total amount that is possible to be learned from experiment start to asymptote. We ran 100 simulated participants, which are represented on the x axis. We plot estimated posterior means (solid circles), and credible intervals (grey smear), for each of the 100 simulated participants. M and S indicate the multiple-target condition and single-target condition, respectively."
+
+```
+
+```{r echo= FALSE , results = "asis", fig.width=3, fig.height=2, fig.cap=D_cap}
+ggplot.recov(recov_D) +xlab("") 
+```
+
+
+
+```{r echo= FALSE}
+other_cap <- "Figure S6. Recovery of the standard deviation of accumulation rates for 'matching' responses (sv.match), the level of start point noise (A), and non-decision time. We ran 100 simulated participants, which are represented on the x axis. We plot estimated posterior means (solid circles), and credible intervals (grey smear), for each of the 100 simulated participants."
+
+```
+
+Recovery of parameters that we did not perform substantive inference upon (A, sv for the matching accumulator, and non-decision time) is displayed below (Figure S6).
+
+```{r echo= FALSE , results = "asis", fig.width=4, fig.height=2, fig.cap=other_cap}
+ggplot.recov(recov_sv_t0_A) +xlab("") +
+    theme(text = element_text(size = 11))
+```
+

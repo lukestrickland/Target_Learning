@@ -1,0 +1,13 @@
+
+#Did not complete:
+Had a university wide power failure that crashed the first participant 31 near the end of experiment
+Original participant 17 escaped out of the experiment several times and did not come back for day 2
+second participant 17 did not come back for day 2
+participant 20 computer error/closed the program, unsure which
+
+#re-tested:
+p22 had a block with 0 RM accuracy for single target PM in 
+the post block test
+
+participant 29 had several blocks with lower than chance ldt accuracy
+participant 23 had a block with 57% ldt accuracy
